@@ -1,27 +1,67 @@
-import VisitorsChart from "./components/VisitorsChart";
+import { Suspense } from "react";
+import MetricChart from "./components/MetricChart";
+import MetricSwitcher, {
+  type MetricOption,
+} from "./components/MetricSwitcher";
+import RangeFilter from "./components/RangeFilter";
 import { Card } from "@/components/ui/card/Card";
-import { getDailyVisitors, type DailyVisitors } from "./lib/posthog";
+import {
+  getDailyPageviews,
+  getDailyTotalClicks,
+  getDailyCtaClicks,
+  getDailyAvgDuration,
+  normalizeRange,
+  OVERLAY_PAGE_URL,
+  type MetricPoint,
+} from "./lib/posthog";
 
-export default async function Home() {
-  let data: DailyVisitors[] = [];
+export default async function Home({
+  searchParams,
+}: {
+  searchParams: Promise<{ days?: string }>;
+}) {
+  const { days: daysParam } = await searchParams;
+  const days = normalizeRange(daysParam);
+
+  let views: MetricPoint[] = [];
+  let clicksVsCta: MetricOption[] = [];
+  let avgDuration: MetricPoint[] = [];
   let error: string | null = null;
 
   try {
-    data = await getDailyVisitors(30);
+    const [pageviews, totalClicks, ctaClicks, duration] = await Promise.all([
+      getDailyPageviews(days),
+      getDailyTotalClicks(days),
+      getDailyCtaClicks(days),
+      getDailyAvgDuration(days),
+    ]);
+    views = pageviews;
+    clicksVsCta = [
+      { key: "clicks", label: "Clicks", data: totalClicks, color: "#22c55e", format: "number" },
+      { key: "cta", label: "CTA clicks", data: ctaClicks, color: "#a855f7", format: "number" },
+    ];
+    avgDuration = duration;
   } catch (e) {
     error = e instanceof Error ? e.message : "Failed to load analytics.";
   }
 
-  const totalVisitors = data.reduce((sum, d) => sum + d.visitors, 0);
-  const peak = data.reduce((max, d) => Math.max(max, d.visitors), 0);
-  const today = data.at(-1)?.visitors ?? 0;
-
   return (
     <div className="flex flex-1 flex-col gap-6 p-4 sm:p-8">
-      <header>
-        <h1 className="text-4xl font-bold leading-9 -tracking-tight text-brand-dark">
-          Overview
-        </h1>
+      <header className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+        <div>
+          <h1 className="text-4xl font-bold leading-9 -tracking-tight text-brand-dark">
+            Overview
+          </h1>
+          <p className="mt-1 text-sm text-muted-foreground">
+            Boxii overlay analytics for{" "}
+            <span className="font-medium text-foreground">
+              {OVERLAY_PAGE_URL}
+            </span>
+          </p>
+        </div>
+        <Suspense fallback={null}>
+          <RangeFilter />
+        </Suspense>
       </header>
 
       {error ? (
@@ -30,37 +70,28 @@ export default async function Home() {
           <p className="mt-1 font-mono text-xs opacity-80">{error}</p>
         </Card>
       ) : (
-        <>
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
-            <StatCard label="Total visitors (30d)" value={totalVisitors} />
-            <StatCard label="Peak day" value={peak} />
-            <StatCard label="Latest day" value={today} />
-          </div>
-
-          <Card className="p-6">
-            <h2 className="mb-1 text-lg font-semibold text-brand-dark">
-              Daily visitors
-            </h2>
-            <p className="mb-4 text-sm text-muted-foreground">
-              Unique visitors over the last 30 days
-            </p>
-            <VisitorsChart data={data} />
+        <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+          <Card className="p-6 lg:col-span-2">
+            <MetricChart
+              title="Views"
+              data={views}
+              color="#6366f1"
+              format="number"
+            />
           </Card>
-        </>
+          <Card className="p-6">
+            <MetricSwitcher options={clicksVsCta} />
+          </Card>
+          <Card className="p-6">
+            <MetricChart
+              title="Avg. view duration"
+              data={avgDuration}
+              color="#d97706"
+              format="duration"
+            />
+          </Card>
+        </div>
       )}
     </div>
-  );
-}
-
-function StatCard({ label, value }: { label: string; value: number }) {
-  return (
-    <Card className="p-5">
-      <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-        {label}
-      </p>
-      <p className="mt-1 text-2xl font-semibold text-brand-dark">
-        {value.toLocaleString()}
-      </p>
-    </Card>
   );
 }

@@ -46,14 +46,6 @@ export default async function HeatmapPage() {
             <p className="mt-1 text-sm text-muted-foreground">Last 90 days</p>
           </div>
           <HeatmapViewer views={views} />
-          <p className="mt-3 text-xs text-muted-foreground">
-            Coordinate heat over a snapshot of the current overlay. The overlay
-            locks page scroll, so clicks are viewport-relative; each device view
-            matches its dominant viewport ({OVERLAY_CAPTURES.desktop.width}×
-            {OVERLAY_CAPTURES.desktop.height} desktop,{" "}
-            {OVERLAY_CAPTURES.mobile.width}×{OVERLAY_CAPTURES.mobile.height}{" "}
-            mobile).
-          </p>
         </Card>
       )}
     </div>

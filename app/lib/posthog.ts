@@ -1,5 +1,9 @@
 // Server-only PostHog data access. Credentials stay on the server.
 import "server-only";
+import type { MetricPoint } from "./ranges";
+
+export type { MetricPoint } from "./ranges";
+export { RANGE_OPTIONS, normalizeRange, type RangeOption } from "./ranges";
 
 const POSTHOG_HOST = process.env.POSTHOG_HOST ?? "https://us.posthog.com";
 const POSTHOG_PROJECT_ID = process.env.POSTHOG_PROJECT_ID;
@@ -156,4 +160,138 @@ export async function getOverlayClicks(
     y: r.pointer_y,
     count: r.count,
   }));
+}
+
+// ---------------------------------------------------------------------------
+// Overview metrics — daily time series, each scoped to the overlay page.
+// ---------------------------------------------------------------------------
+
+/** UTC day strings (YYYY-MM-DD) for the last N days, oldest first. */
+function lastNDaysUTC(days: number): string[] {
+  const out: string[] = [];
+  const now = new Date();
+  for (let i = days - 1; i >= 0; i--) {
+    const d = new Date(now);
+    d.setUTCDate(d.getUTCDate() - i);
+    out.push(d.toISOString().slice(0, 10));
+  }
+  return out;
+}
+
+/** Zero-fill a sparse day→value map across the full range for a clean chart. */
+function fillDaily(days: number, byDay: Map<string, number>): MetricPoint[] {
+  return lastNDaysUTC(days).map((day) => ({ day, value: byDay.get(day) ?? 0 }));
+}
+
+/** Run async work over items with bounded concurrency. */
+async function mapLimit<T, R>(
+  items: T[],
+  limit: number,
+  fn: (item: T) => Promise<R>,
+): Promise<R[]> {
+  const results = new Array<R>(items.length);
+  let cursor = 0;
+  async function worker() {
+    while (cursor < items.length) {
+      const i = cursor++;
+      results[i] = await fn(items[i]);
+    }
+  }
+  await Promise.all(
+    Array.from({ length: Math.min(limit, items.length) }, worker),
+  );
+  return results;
+}
+
+async function dailyEventCount(
+  event: string,
+  days: number,
+): Promise<MetricPoint[]> {
+  const rows = await runHogQL(`
+    SELECT toDate(timestamp) AS day, count() AS n
+    FROM events
+    WHERE event = '${event}'
+      AND properties.$current_url = '${OVERLAY_PAGE_URL}'
+      AND timestamp >= now() - INTERVAL ${days} DAY
+    GROUP BY day
+    ORDER BY day
+  `);
+  const byDay = new Map(rows.map(([d, n]) => [String(d), Number(n)]));
+  return fillDaily(days, byDay);
+}
+
+/** Daily pageviews of the overlay page. */
+export function getDailyPageviews(days = 30): Promise<MetricPoint[]> {
+  return dailyEventCount("$pageview", days);
+}
+
+/** Daily labelled CTA clicks inside the overlay. */
+export function getDailyCtaClicks(days = 30): Promise<MetricPoint[]> {
+  return dailyEventCount("cta_click", days);
+}
+
+/**
+ * Daily average overlay view duration (seconds) — per session, the span from
+ * the first `overlay_opened` to the last `overlay_closed`. Sessions without a
+ * close, or longer than an hour, are dropped as outliers.
+ */
+export async function getDailyAvgDuration(days = 30): Promise<MetricPoint[]> {
+  const rows = await runHogQL(`
+    SELECT day, round(avg(dur)) AS seconds FROM (
+      SELECT toDate(o.opened) AS day,
+             dateDiff('second', o.opened, c.closed) AS dur
+      FROM (
+        SELECT properties.$session_id AS sid, min(timestamp) AS opened
+        FROM events
+        WHERE event = 'overlay_opened'
+          AND properties.$current_url = '${OVERLAY_PAGE_URL}'
+          AND timestamp >= now() - INTERVAL ${days} DAY
+        GROUP BY sid
+      ) o
+      INNER JOIN (
+        SELECT properties.$session_id AS sid, max(timestamp) AS closed
+        FROM events
+        WHERE event = 'overlay_closed'
+          AND properties.$current_url = '${OVERLAY_PAGE_URL}'
+          AND timestamp >= now() - INTERVAL ${days} DAY
+        GROUP BY sid
+      ) c ON o.sid = c.sid
+      WHERE dur > 0 AND dur < 3600
+    )
+    GROUP BY day
+    ORDER BY day
+  `);
+  const byDay = new Map(rows.map(([d, s]) => [String(d), Number(s)]));
+  return fillDaily(days, byDay);
+}
+
+/**
+ * Daily total overlay clicks. There is no generic click event (autocapture is
+ * off), so this reads the coordinate heatmap store one day at a time and sums
+ * the click counts across all devices.
+ */
+export async function getDailyTotalClicks(days = 30): Promise<MetricPoint[]> {
+  if (!POSTHOG_API_KEY) {
+    throw new Error(
+      "Missing PostHog credentials. Set POSTHOG_API_KEY in .env.local",
+    );
+  }
+  const dates = lastNDaysUTC(days);
+  const counts = await mapLimit(dates, 8, async (date) => {
+    const params = new URLSearchParams({
+      date_from: date,
+      date_to: date,
+      type: "click",
+      aggregation: "total_count",
+      url_exact: OVERLAY_PAGE_URL,
+    });
+    const res = await fetch(`${POSTHOG_HOST}/api/heatmap/?${params}`, {
+      headers: { Authorization: `Bearer ${POSTHOG_API_KEY}` },
+      next: { revalidate: 600 },
+    });
+    if (!res.ok) return 0;
+    const data = (await res.json()) as { results: { count: number }[] };
+    return data.results.reduce((sum, r) => sum + r.count, 0);
+  });
+  return dates.map((day, i) => ({ day, value: counts[i] }));
 }
