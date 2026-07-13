@@ -19,21 +19,40 @@ export type HeatmapPoint = {
 /** The URL the Boxii overlay is embedded on (heatmap capture is scoped to it). */
 export const OVERLAY_PAGE_URL = "https://www.lawbrokr.com/";
 
+export type Device = "desktop" | "mobile";
+
+export type OverlayCapture = {
+  image: string;
+  width: number;
+  height: number;
+  viewportMin: number;
+  viewportMax: number;
+};
+
 /**
- * The Boxii overlay screenshot the heatmap is drawn onto, and the capture
- * parameters it must line up with. The overlay is a `position: fixed` full-
- * viewport stage that locks page scroll, so click coordinates are viewport-
- * relative — we screenshot at the dominant desktop viewport and filter clicks
+ * Per-device Boxii overlay screenshots the heatmap is drawn onto, and the
+ * capture parameters each must line up with. The overlay is a `position: fixed`
+ * full-viewport stage that locks page scroll, so click coordinates are viewport-
+ * relative — we screenshot at each device's dominant viewport and filter clicks
  * to that viewport-width band so the coordinates match the pixels.
  * Re-capture with scripts/capture-overlay.mjs if the overlay design changes.
  */
-export const OVERLAY_CAPTURE = {
-  image: "/boxii-overlay-lawbrokr.png",
-  width: 1512,
-  height: 828,
-  viewportMin: 1440,
-  viewportMax: 1600,
-} as const;
+export const OVERLAY_CAPTURES: Record<Device, OverlayCapture> = {
+  desktop: {
+    image: "/boxii-overlay-lawbrokr-desktop.png",
+    width: 1512,
+    height: 828,
+    viewportMin: 1440,
+    viewportMax: 1600,
+  },
+  mobile: {
+    image: "/boxii-overlay-lawbrokr-mobile.png",
+    width: 402,
+    height: 660,
+    viewportMin: 360,
+    viewportMax: 450,
+  },
+};
 
 /**
  * Run a HogQL query against the PostHog Query API.
@@ -90,23 +109,28 @@ export async function getDailyVisitors(days = 30): Promise<DailyVisitors[]> {
 
 /**
  * Boxii overlay click coordinates, via the PostHog heatmap API, filtered to the
- * desktop viewport-width band our screenshot was captured at so the coordinates
- * line up with the image. https://posthog.com/docs/toolbar/heatmaps
+ * given device's viewport-width band (the same band its screenshot was captured
+ * at) so the coordinates line up with the image.
+ * https://posthog.com/docs/toolbar/heatmaps
  */
-export async function getOverlayClicks(days = 60): Promise<HeatmapPoint[]> {
+export async function getOverlayClicks(
+  device: Device = "desktop",
+  days = 90,
+): Promise<HeatmapPoint[]> {
   if (!POSTHOG_API_KEY) {
     throw new Error(
       "Missing PostHog credentials. Set POSTHOG_API_KEY in .env.local",
     );
   }
 
+  const capture = OVERLAY_CAPTURES[device];
   const params = new URLSearchParams({
     date_from: `-${days}d`,
     type: "click",
     aggregation: "total_count",
     url_exact: OVERLAY_PAGE_URL,
-    viewport_width_min: String(OVERLAY_CAPTURE.viewportMin),
-    viewport_width_max: String(OVERLAY_CAPTURE.viewportMax),
+    viewport_width_min: String(capture.viewportMin),
+    viewport_width_max: String(capture.viewportMax),
   });
 
   const res = await fetch(`${POSTHOG_HOST}/api/heatmap/?${params}`, {

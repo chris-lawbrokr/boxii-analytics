@@ -1,10 +1,11 @@
 /**
- * Re-capture the Boxii overlay screenshot the dashboard heatmap is drawn onto.
+ * Re-capture the Boxii overlay screenshots the dashboard heatmaps are drawn onto,
+ * one per device (desktop + mobile).
  *
  * The overlay is a `position: fixed`, scroll-locked, full-viewport stage, so
- * heatmap clicks are viewport-relative. We screenshot the overlay open at the
- * dominant desktop viewport (1512x828) so the stored image lines up with the
- * clicks that `getOverlayClicks()` fetches (filtered to that viewport band).
+ * heatmap clicks are viewport-relative. We screenshot the overlay open at each
+ * device's dominant viewport so the stored image lines up with the clicks that
+ * `getOverlayClicks(device)` fetches (filtered to that viewport-width band).
  *
  * Prereqs:
  *   - The boxii-js repo checked out next to this one, with `npm run dev` running
@@ -21,12 +22,14 @@ import { fileURLToPath } from "node:url";
 import { dirname, resolve } from "node:path";
 
 const TENANT = process.argv[2] || "lawbrokr";
-const DEV_URL = `http://localhost:5173/?site=${TENANT}`;
-const W = 1512;
-const H = 828;
+
+// Dominant viewport per device, from PostHog session data for the overlay page.
+const DEVICES = [
+  { name: "desktop", width: 1512, height: 828 },
+  { name: "mobile", width: 402, height: 660 },
+];
 
 const here = dirname(fileURLToPath(import.meta.url));
-const OUT = resolve(here, `../public/boxii-overlay-${TENANT}.png`);
 
 function resolveChrome() {
   if (process.env.CHROME_PATH && existsSync(process.env.CHROME_PATH)) {
@@ -49,23 +52,33 @@ const browser = await chromium.launch({
   executablePath: resolveChrome(),
   headless: true,
 });
-const page = await browser.newPage({
-  viewport: { width: W, height: H },
-  deviceScaleFactor: 2,
-});
 
-await page.goto(DEV_URL, { waitUntil: "networkidle", timeout: 30000 });
-await page.waitForFunction(
-  () => {
-    const el = document.querySelector("boxii-overlay");
-    return !!el?.shadowRoot?.querySelector(".stage");
-  },
-  { timeout: 15000 },
-);
-await page.evaluate(() => document.fonts.ready);
-await page.waitForTimeout(1200); // let the stage-in animation settle
+for (const device of DEVICES) {
+  const page = await browser.newPage({
+    viewport: { width: device.width, height: device.height },
+    deviceScaleFactor: 2,
+    isMobile: device.name === "mobile",
+    hasTouch: device.name === "mobile",
+  });
 
-await page.screenshot({ path: OUT, clip: { x: 0, y: 0, width: W, height: H } });
-console.log(`Captured ${TENANT} overlay → ${OUT}`);
+  await page.goto(`http://localhost:5173/?site=${TENANT}`, {
+    waitUntil: "networkidle",
+    timeout: 30000,
+  });
+  await page.waitForFunction(
+    () => !!document.querySelector("boxii-overlay")?.shadowRoot?.querySelector(".stage"),
+    { timeout: 15000 },
+  );
+  await page.evaluate(() => document.fonts.ready);
+  await page.waitForTimeout(1200); // let the stage-in animation settle
+
+  const out = resolve(here, `../public/boxii-overlay-${TENANT}-${device.name}.png`);
+  await page.screenshot({
+    path: out,
+    clip: { x: 0, y: 0, width: device.width, height: device.height },
+  });
+  console.log(`Captured ${TENANT} ${device.name} (${device.width}x${device.height}) → ${out}`);
+  await page.close();
+}
 
 await browser.close();

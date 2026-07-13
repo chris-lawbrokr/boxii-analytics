@@ -1,10 +1,6 @@
 import VisitorsChart from "./components/VisitorsChart";
 import { Card } from "@/components/ui/card/Card";
-import {
-  getDailyVisitors,
-  OVERLAY_PAGE_URL,
-  type DailyVisitors,
-} from "./lib/posthog";
+import { getDailyVisitors, type DailyVisitors } from "./lib/posthog";
 
 export default async function Home() {
   let data: DailyVisitors[] = [];
