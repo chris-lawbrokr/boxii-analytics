@@ -44,6 +44,14 @@ const navItems: NavItem[] = [
 
 const BARE_ROUTES: string[] = [];
 
+function Wordmark() {
+  return (
+    <span className="text-xl font-bold tracking-tight text-brand-dark lowercase">
+      boxii
+    </span>
+  );
+}
+
 export function Nav({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const [mounted, setMounted] = useState(false);
@@ -92,12 +100,6 @@ export function Nav({ children }: { children: React.ReactNode }) {
       tabletMql.removeEventListener("change", onChange);
     };
   }, []);
-
-  const Wordmark = () => (
-    <span className="text-xl font-bold tracking-tight text-brand-dark lowercase">
-      boxii
-    </span>
-  );
 
   const collapsedContent = (
     <>

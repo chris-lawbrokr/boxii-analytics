@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef } from "react";
-import type { HeatmapPoint } from "../lib/posthog";
+import type { HeatmapPoint } from "../lib/ranges";
 
 type Props = {
   points: HeatmapPoint[];
@@ -10,7 +10,8 @@ type Props = {
   baseHeight: number;
 };
 
-// blue → cyan → lime → yellow → red
+// Classic heatmap scale: blue → cyan → lime → yellow → red (intentionally
+// multi-hue, independent of the brand purple used elsewhere).
 const RAMP: [number, number, number][] = [
   [0, 0, 255],
   [0, 255, 255],

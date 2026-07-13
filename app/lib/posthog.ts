@@ -1,9 +1,28 @@
 // Server-only PostHog data access. Credentials stay on the server.
 import "server-only";
-import type { MetricPoint } from "./ranges";
+import type {
+  MetricPoint,
+  BreakdownRow,
+  HeatType,
+  Device,
+  HeatmapPoint,
+  OverlayCapture,
+} from "./ranges";
 
-export type { MetricPoint } from "./ranges";
-export { RANGE_OPTIONS, normalizeRange, type RangeOption } from "./ranges";
+export type {
+  MetricPoint,
+  BreakdownRow,
+  HeatType,
+  Device,
+  HeatmapPoint,
+  OverlayCapture,
+} from "./ranges";
+export {
+  RANGE_OPTIONS,
+  normalizeRange,
+  HEAT_TYPES,
+  type RangeOption,
+} from "./ranges";
 
 const POSTHOG_HOST = process.env.POSTHOG_HOST ?? "https://us.posthog.com";
 const POSTHOG_PROJECT_ID = process.env.POSTHOG_PROJECT_ID;
@@ -14,24 +33,8 @@ export type DailyVisitors = {
   visitors: number;
 };
 
-export type HeatmapPoint = {
-  x: number; // relative position across the viewport, 0..1
-  y: number; // pixels down the viewport (overlay is a fixed, scroll-locked stage)
-  count: number;
-};
-
 /** The URL the Boxii overlay is embedded on (heatmap capture is scoped to it). */
 export const OVERLAY_PAGE_URL = "https://www.lawbrokr.com/";
-
-export type Device = "desktop" | "mobile";
-
-export type OverlayCapture = {
-  image: string;
-  width: number;
-  height: number;
-  viewportMin: number;
-  viewportMax: number;
-};
 
 /**
  * Per-device Boxii overlay screenshots the heatmap is drawn onto, and the
@@ -112,14 +115,15 @@ export async function getDailyVisitors(days = 30): Promise<DailyVisitors[]> {
 }
 
 /**
- * Boxii overlay click coordinates, via the PostHog heatmap API, filtered to the
- * given device's viewport-width band (the same band its screenshot was captured
+ * Boxii overlay heatmap coordinates for a device + interaction type, filtered to
+ * the device's viewport-width band (the same band its screenshot was captured
  * at) so the coordinates line up with the image.
  * https://posthog.com/docs/toolbar/heatmaps
  */
 export async function getOverlayClicks(
   device: Device = "desktop",
   days = 90,
+  type: HeatType = "click",
 ): Promise<HeatmapPoint[]> {
   if (!POSTHOG_API_KEY) {
     throw new Error(
@@ -130,7 +134,7 @@ export async function getOverlayClicks(
   const capture = OVERLAY_CAPTURES[device];
   const params = new URLSearchParams({
     date_from: `-${days}d`,
-    type: "click",
+    type,
     aggregation: "total_count",
     url_exact: OVERLAY_PAGE_URL,
     viewport_width_min: String(capture.viewportMin),
@@ -294,4 +298,150 @@ export async function getDailyTotalClicks(days = 30): Promise<MetricPoint[]> {
     return data.results.reduce((sum, r) => sum + r.count, 0);
   });
   return dates.map((day, i) => ({ day, value: counts[i] }));
+}
+
+// ---------------------------------------------------------------------------
+// Conversion, segmentation, and engagement-depth queries.
+// ---------------------------------------------------------------------------
+
+const SCOPE = `properties.$current_url = '${OVERLAY_PAGE_URL}'`;
+
+export type FunnelData = { views: number; opens: number; cta: number };
+
+/** Session-based funnel: viewed → opened overlay → clicked a CTA. */
+export async function getFunnel(days = 30): Promise<FunnelData> {
+  const rows = await runHogQL(`
+    SELECT
+      uniqIf(properties.$session_id, event = '$pageview') AS views,
+      uniqIf(properties.$session_id, event = 'overlay_opened') AS opens,
+      uniqIf(properties.$session_id, event = 'cta_click') AS cta
+    FROM events
+    WHERE ${SCOPE} AND timestamp >= now() - INTERVAL ${days} DAY
+  `);
+  const [v, o, c] = rows[0] ?? [0, 0, 0];
+  return { views: Number(v), opens: Number(o), cta: Number(c) };
+}
+
+/** Distinct sessions per value of a pageview property (audience breakdowns). */
+async function sessionBreakdown(
+  prop: string,
+  days: number,
+  limit = 8,
+): Promise<BreakdownRow[]> {
+  const rows = await runHogQL(`
+    SELECT ${prop} AS label, uniq(properties.$session_id) AS n
+    FROM events
+    WHERE event = '$pageview' AND ${SCOPE}
+      AND timestamp >= now() - INTERVAL ${days} DAY
+      AND ${prop} != ''
+    GROUP BY label
+    ORDER BY n DESC
+    LIMIT ${limit}
+  `);
+  return rows.map(([l, n]) => ({ label: String(l ?? "Unknown"), value: Number(n) }));
+}
+
+export const getTrafficSources = (days = 30) =>
+  sessionBreakdown("properties.traffic_source", days);
+export const getDeviceBreakdown = (days = 30) =>
+  sessionBreakdown("properties.$device_type", days);
+export const getCountryBreakdown = (days = 30) =>
+  sessionBreakdown("properties.$geoip_country_name", days);
+export const getBrowserBreakdown = (days = 30) =>
+  sessionBreakdown("properties.$browser", days);
+export const getOsBreakdown = (days = 30) =>
+  sessionBreakdown("properties.$os", days);
+
+/** CTA clicks ranked by label (with the action taxonomy for context). */
+export async function getCtaLeaderboard(days = 30): Promise<BreakdownRow[]> {
+  const rows = await runHogQL(`
+    SELECT properties.cta_label AS label, count() AS n
+    FROM events
+    WHERE event = 'cta_click' AND ${SCOPE}
+      AND timestamp >= now() - INTERVAL ${days} DAY
+      AND properties.cta_label != ''
+    GROUP BY label
+    ORDER BY n DESC
+    LIMIT 10
+  `);
+  return rows.map(([l, n]) => ({ label: String(l ?? "Unknown"), value: Number(n) }));
+}
+
+const DURATION_BUCKETS = [
+  "0–10s",
+  "10–30s",
+  "30–60s",
+  "1–3m",
+  "3–10m",
+  "10m+",
+] as const;
+
+/** Distribution of overlay view durations across fixed buckets. */
+export async function getDurationDistribution(
+  days = 30,
+): Promise<BreakdownRow[]> {
+  const rows = await runHogQL(`
+    SELECT bucket, count() AS n FROM (
+      SELECT multiIf(
+        dur < 10, '0–10s',
+        dur < 30, '10–30s',
+        dur < 60, '30–60s',
+        dur < 180, '1–3m',
+        dur < 600, '3–10m',
+        '10m+') AS bucket
+      FROM (
+        SELECT dateDiff('second', o.opened, c.closed) AS dur
+        FROM (
+          SELECT properties.$session_id AS sid, min(timestamp) AS opened
+          FROM events
+          WHERE event = 'overlay_opened' AND ${SCOPE}
+            AND timestamp >= now() - INTERVAL ${days} DAY
+          GROUP BY sid
+        ) o
+        INNER JOIN (
+          SELECT properties.$session_id AS sid, max(timestamp) AS closed
+          FROM events
+          WHERE event = 'overlay_closed' AND ${SCOPE}
+            AND timestamp >= now() - INTERVAL ${days} DAY
+          GROUP BY sid
+        ) c ON o.sid = c.sid
+        WHERE dur > 0 AND dur < 3600
+      )
+    )
+    GROUP BY bucket
+  `);
+  const byBucket = new Map(rows.map(([b, n]) => [String(b), Number(n)]));
+  return DURATION_BUCKETS.map((label) => ({
+    label,
+    value: byBucket.get(label) ?? 0,
+  }));
+}
+
+/**
+ * Scroll depth — % of overlay viewers who reached each depth. Sourced from the
+ * heatmap store's scrolldepth buckets (cumulative reach, deepest-declining).
+ */
+export async function getScrollDepth(days = 30): Promise<BreakdownRow[]> {
+  if (!POSTHOG_API_KEY) return [];
+  const params = new URLSearchParams({
+    date_from: `-${days}d`,
+    type: "scrolldepth",
+    url_exact: OVERLAY_PAGE_URL,
+  });
+  const res = await fetch(`${POSTHOG_HOST}/api/heatmap/?${params}`, {
+    headers: { Authorization: `Bearer ${POSTHOG_API_KEY}` },
+    next: { revalidate: 600 },
+  });
+  if (!res.ok) return [];
+  const data = (await res.json()) as {
+    results: { scroll_depth_bucket: number; cumulative_count: number }[];
+  };
+  const buckets = [...data.results].sort(
+    (a, b) => a.scroll_depth_bucket - b.scroll_depth_bucket,
+  );
+  const max = Math.max(...buckets.map((b) => b.cumulative_count), 1);
+  return buckets.map((b) => ({
+    label: `${b.scroll_depth_bucket}px`,
+    value: Math.round((b.cumulative_count / max) * 100),
+  }));
 }
