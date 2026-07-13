@@ -1,19 +1,107 @@
 @import "tailwindcss";
 
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  --background: #f2f2f2;
+  --foreground: #070043;
+  --card: #ffffff;
+  --card-foreground: #070043;
+  --popover: #ffffff;
+  --popover-foreground: #070043;
+  --primary: #3b2559;
+  --primary-foreground: #ffffff;
+  --secondary: #f2f2f2;
+  --secondary-foreground: #070043;
+  --muted: #f2f2f2;
+  --muted-foreground: #444444;
+  --accent: #f2f2f2;
+  --accent-foreground: #070043;
+  --destructive: #dc2626;
+  --destructive-foreground: #ffffff;
+  --border: #c8c8c8;
+  --input: #c8c8c8;
+  --ring: #3b2559;
+  --radius: 0.625rem;
 }
 
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --radius: var(--radius);
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
 }
 
-body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+@theme {
+  /* Brand / UI */
+  --color-brand-dark: #250d53;
+  --color-surface: #fbfbfb;
+  --color-border-light: #e8e8e8;
+  --color-skeleton: #f3f4f6;
+  --color-border-purple: #a18dbe;
+
+  /* Status: Success / Active */
+  --color-status-success-bg: #ededc7;
+  --color-status-success-text: #626444;
+  --color-status-success-border: #626444;
+
+  /* Status: Warning / Review */
+  --color-status-warning-bg: #fff2cf;
+  --color-status-warning-text: #8f5529;
+  --color-status-warning-border: #ae8343;
+  --color-status-caution-text: #8c5a34;
+
+  /* Status: Error / Inactive */
+  --color-status-error-bg: #ffe2de;
+  --color-status-error-text: #b13c33;
+  --color-status-error-border: #ca8d92;
+
+  /* Status: Neutral */
+  --color-status-neutral-bg: #e1dff6;
+  --color-status-neutral-border: #c4c0e8;
+
+  /* Status: Info */
+  --color-status-info-bg: #d8e6f4;
+  --color-status-info-text: #506273;
+  --color-status-info-border: #b0cde4;
+
+  /* Status: Indigo */
+  --color-status-indigo-bg: #ede7ff;
+  --color-status-indigo-text: #976dff;
+  --color-status-indigo-border: #d6c0ff;
+
+  /* Chart */
+  --color-chart-indigo: #312e81;
+  --color-chart-indigo-medium: #6366f1;
+  --color-chart-indigo-light: #a5b4fc;
+  --color-chart-indigo-lightest: #e0e7ff;
+  --color-chart-indigo-dark: #4f46e5;
+  --color-chart-label: #9ca3af;
+  --color-chart-grid: #f3f4f6;
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+
+  body {
+    @apply bg-background text-foreground;
+  }
 }

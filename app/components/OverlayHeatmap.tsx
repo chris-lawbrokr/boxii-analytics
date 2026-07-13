@@ -105,7 +105,7 @@ export default function OverlayHeatmap({
   }, [draw]);
 
   return (
-    <div className="relative w-full overflow-hidden rounded-xl border border-zinc-200">
+    <div className="relative w-full overflow-hidden rounded-xl border border-border">
       {/* eslint-disable-next-line @next/next/no-img-element */}
       <img
         ref={imgRef}
