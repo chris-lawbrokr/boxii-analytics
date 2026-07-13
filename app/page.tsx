@@ -101,8 +101,20 @@ export default async function Home({
     funnel = fn;
     views = pageviews;
     clicksVsCta = [
-      { key: "clicks", label: "Clicks", data: totalClicks, color: PURPLE, format: "number" },
-      { key: "cta", label: "CTA clicks", data: ctaClicks, color: PURPLE, format: "number" },
+      {
+        key: "clicks",
+        label: "Clicks",
+        data: totalClicks,
+        color: PURPLE,
+        format: "number",
+      },
+      {
+        key: "cta",
+        label: "CTA clicks",
+        data: ctaClicks,
+        color: PURPLE,
+        format: "number",
+      },
     ];
     avgDuration = dur;
     ctaLeaderboard = cta;
@@ -131,12 +143,6 @@ export default async function Home({
           <h1 className="text-4xl font-bold leading-9 -tracking-tight text-brand-dark">
             Overview
           </h1>
-          <p className="mt-1 text-sm text-muted-foreground">
-            Boxii overlay analytics for{" "}
-            <span className="font-medium text-foreground">
-              {OVERLAY_PAGE_URL}
-            </span>
-          </p>
         </div>
         <Suspense fallback={null}>
           <RangeFilter />
@@ -259,7 +265,10 @@ export default async function Home({
                 <BreakdownList title="Browser" rows={browsers} />
               </Card>
               <Card className="p-6">
-                <BreakdownList title="Operating system" rows={operatingSystems} />
+                <BreakdownList
+                  title="Operating system"
+                  rows={operatingSystems}
+                />
               </Card>
             </div>
           </Section>

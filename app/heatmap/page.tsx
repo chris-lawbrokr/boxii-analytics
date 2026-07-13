@@ -55,12 +55,6 @@ export default async function HeatmapPage({
           <h1 className="text-4xl font-bold leading-9 -tracking-tight text-brand-dark">
             Heatmap
           </h1>
-          <p className="mt-1 text-sm text-muted-foreground">
-            Where visitors interact with the Boxii overlay ·{" "}
-            <span className="font-medium text-foreground">
-              {OVERLAY_PAGE_URL}
-            </span>
-          </p>
         </div>
         <Suspense fallback={null}>
           <RangeFilter />
