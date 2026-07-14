@@ -6,6 +6,28 @@ export type MetricPoint = { day: string; value: number };
 /** A single categorical breakdown row (label + count/percentage). */
 export type BreakdownRow = { label: string; value: number };
 
+/**
+ * One segment's funnel: how many sessions arrived from it, and how far they got.
+ * Rates are percentages of the previous step (opens ÷ sessions, ctas ÷ opens).
+ */
+export type SegmentRow = {
+  label: string;
+  sessions: number;
+  opens: number;
+  ctas: number;
+  openRate: number;
+  ctaRate: number;
+};
+
+/** A clicked outbound link, ranked by click count. */
+export type LinkRow = { url: string; label: string; clicks: number };
+
+/**
+ * Below this many sessions a conversion rate is noise (one extra click swings it
+ * tens of points), so the UI shows the counts but withholds the rate.
+ */
+export const MIN_SESSIONS_FOR_RATE = 5;
+
 export type Device = "desktop" | "mobile";
 
 export type HeatmapPoint = {

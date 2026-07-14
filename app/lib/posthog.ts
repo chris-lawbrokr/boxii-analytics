@@ -3,6 +3,8 @@ import "server-only";
 import type {
   MetricPoint,
   BreakdownRow,
+  SegmentRow,
+  LinkRow,
   HeatType,
   Device,
   HeatmapPoint,
@@ -12,6 +14,8 @@ import type {
 export type {
   MetricPoint,
   BreakdownRow,
+  SegmentRow,
+  LinkRow,
   HeatType,
   Device,
   HeatmapPoint,
@@ -21,6 +25,7 @@ export {
   RANGE_OPTIONS,
   normalizeRange,
   HEAT_TYPES,
+  MIN_SESSIONS_FOR_RATE,
   type RangeOption,
 } from "./ranges";
 
@@ -415,6 +420,179 @@ export async function getDurationDistribution(
     label,
     value: byBucket.get(label) ?? 0,
   }));
+}
+
+// ---------------------------------------------------------------------------
+// Conversion intelligence — segment → open → CTA, and outbound link ranking.
+// ---------------------------------------------------------------------------
+
+/**
+ * Funnel per value of a session-level dimension: sessions → overlay opens → CTA
+ * clicks. Every dimension used here (traffic source, GeoIP, device) rides on
+ * every event, so `any()` over the session's events resolves it reliably.
+ *
+ * This is what separates the intelligence tab from Overview's raw counts: the
+ * same dimensions, but measured by how well they convert rather than how much
+ * traffic they send.
+ */
+async function segmentFunnel(
+  prop: string,
+  days: number,
+  limit = 10,
+): Promise<SegmentRow[]> {
+  const rows = await runHogQL(`
+    SELECT seg, count() AS sessions,
+           countIf(opened) AS opens,
+           countIf(clicked) AS ctas
+    FROM (
+      SELECT properties.$session_id AS sid,
+             any(${prop}) AS seg,
+             max(event = 'overlay_opened') AS opened,
+             max(event = 'cta_click') AS clicked
+      FROM events
+      WHERE ${SCOPE} AND timestamp >= now() - INTERVAL ${days} DAY
+      GROUP BY sid
+    )
+    WHERE seg IS NOT NULL AND seg != ''
+    GROUP BY seg
+    ORDER BY sessions DESC
+    LIMIT ${limit}
+  `);
+
+  return rows.map(([label, sessions, opens, ctas]) => {
+    const s = Number(sessions);
+    const o = Number(opens);
+    const c = Number(ctas);
+    return {
+      label: String(label),
+      sessions: s,
+      opens: o,
+      ctas: c,
+      openRate: s ? Math.round((o / s) * 100) : 0,
+      ctaRate: o ? Math.round((c / o) * 100) : 0,
+    };
+  });
+}
+
+export const getTrafficSourceConversion = (days = 30) =>
+  segmentFunnel("properties.traffic_source", days);
+export const getChannelConversion = (days = 30) =>
+  segmentFunnel("properties.traffic_channel", days);
+export const getCityConversion = (days = 30) =>
+  segmentFunnel("properties.$geoip_city_name", days);
+export const getRegionConversion = (days = 30) =>
+  segmentFunnel("properties.$geoip_subdivision_1_name", days);
+export const getDeviceConversion = (days = 30) =>
+  segmentFunnel("properties.$device_type", days);
+export const getBrowserConversion = (days = 30) =>
+  segmentFunnel("properties.$browser", days);
+export const getReferrerConversion = (days = 30) =>
+  segmentFunnel("properties.$referring_domain", days);
+
+/**
+ * Outbound links ranked by clicks. Only CTAs that actually navigate somewhere
+ * carry `destination_url`; in-overlay CTAs (tab switches, chips) don't, so this
+ * is a strictly narrower — and more actionable — list than the CTA leaderboard.
+ *
+ * Grouping is by URL, since the destination is the thing being ranked — but more
+ * than one CTA can point at the same URL (the HubSpot booking link is reachable
+ * from both "Book a free demo" and "Talk to Sales"), so the label shown is the
+ * most frequent one rather than an arbitrary pick.
+ */
+export async function getTopLinks(days = 30, limit = 12): Promise<LinkRow[]> {
+  const rows = await runHogQL(`
+    SELECT properties.destination_url AS dest,
+           topK(1)(properties.cta_label)[1] AS label,
+           count() AS n
+    FROM events
+    WHERE event = 'cta_click' AND ${SCOPE}
+      AND timestamp >= now() - INTERVAL ${days} DAY
+      AND properties.destination_url IS NOT NULL
+      AND properties.destination_url != ''
+    GROUP BY dest
+    ORDER BY n DESC
+    LIMIT ${limit}
+  `);
+  return rows.map(([url, label, n]) => ({
+    url: String(url),
+    label: String(label ?? "Unlabelled"),
+    clicks: Number(n),
+  }));
+}
+
+// ---------------------------------------------------------------------------
+// Mini Boxii — the collapsed floating launcher (boxii-js: src/overlay/
+// boxii-launcher.ts). It only exists after the overlay collapses, so every
+// metric here is the overlay's second act: who comes back once it's dismissed.
+// ---------------------------------------------------------------------------
+
+export type MiniFunnel = { closed: number; engaged: number; reopened: number };
+
+/**
+ * Sessions that dismissed the overlay → clicked the mini launcher → reopened.
+ *
+ * Clicks are attributed to the mini launcher by `overlay_state = 'collapsed'`
+ * rather than by action, so a CTA opened from the launcher's link menu counts
+ * too. `reopened` re-asserts `collapsed` so it can never exceed `engaged` and
+ * invert the funnel, even if `reopen_overlay` is someday fired while expanded.
+ */
+export async function getMiniFunnel(days = 30): Promise<MiniFunnel> {
+  // The outer aliases must not reuse the subquery's names: HogQL resolves
+  // `countIf(closed) AS closed` against the alias it is defining and rejects it
+  // as an aggregate inside an aggregate.
+  const rows = await runHogQL(`
+    SELECT countIf(closed) AS closed_n,
+           countIf(closed AND mini) AS engaged_n,
+           countIf(closed AND reopened) AS reopened_n
+    FROM (
+      SELECT properties.$session_id AS sid,
+             max(event = 'overlay_closed') AS closed,
+             max(event = 'cta_click'
+                 AND properties.overlay_state = 'collapsed') AS mini,
+             max(event = 'cta_click'
+                 AND properties.overlay_state = 'collapsed'
+                 AND properties.cta_action = 'reopen_overlay') AS reopened
+      FROM events
+      WHERE ${SCOPE} AND timestamp >= now() - INTERVAL ${days} DAY
+      GROUP BY sid
+    )
+  `);
+  const [c, e, r] = rows[0] ?? [0, 0, 0];
+  return { closed: Number(c), engaged: Number(e), reopened: Number(r) };
+}
+
+/** What people click on the mini launcher, ranked. */
+export async function getMiniClicks(days = 30): Promise<BreakdownRow[]> {
+  const rows = await runHogQL(`
+    SELECT properties.cta_label AS label, count() AS n
+    FROM events
+    WHERE event = 'cta_click' AND ${SCOPE}
+      AND properties.overlay_state = 'collapsed'
+      AND timestamp >= now() - INTERVAL ${days} DAY
+      AND properties.cta_label != ''
+    GROUP BY label
+    ORDER BY n DESC
+    LIMIT 10
+  `);
+  return rows.map(([l, n]) => ({ label: String(l ?? "Unknown"), value: Number(n) }));
+}
+
+/**
+ * How the overlay gets dismissed — the event that creates the mini launcher in
+ * the first place. `main_site` is the in-overlay button out to the host page;
+ * `api` is a programmatic close.
+ */
+export async function getCloseTriggers(days = 30): Promise<BreakdownRow[]> {
+  const rows = await runHogQL(`
+    SELECT properties.trigger AS label, count() AS n
+    FROM events
+    WHERE event = 'overlay_closed' AND ${SCOPE}
+      AND timestamp >= now() - INTERVAL ${days} DAY
+      AND properties.trigger != ''
+    GROUP BY label
+    ORDER BY n DESC
+  `);
+  return rows.map(([l, n]) => ({ label: String(l ?? "Unknown"), value: Number(n) }));
 }
 
 /**

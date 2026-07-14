@@ -7,6 +7,7 @@ import { usePathname } from "next/navigation";
 import {
   Home,
   MousePointerClick,
+  Target,
   LogOut,
   Bell,
   Settings,
@@ -34,6 +35,12 @@ interface NavItem {
 
 const navItems: NavItem[] = [
   { id: "overview", label: "Overview", href: "/", icon: Home },
+  {
+    id: "intelligence",
+    label: "Conversion",
+    href: "/intelligence",
+    icon: Target,
+  },
   {
     id: "heatmap",
     label: "Heatmap",
