@@ -1,12 +1,10 @@
-import { Suspense } from "react";
 import HeatmapViewer from "../components/HeatmapViewer";
-import RangeFilter from "../components/RangeFilter";
+import PageHeader from "../components/PageHeader";
 import { Card } from "@/components/ui/card/Card";
 import {
   getOverlayClicks,
   normalizeRange,
   OVERLAY_CAPTURES,
-  OVERLAY_PAGE_URL,
   type Device,
   type HeatType,
   type HeatmapPoint,
@@ -50,16 +48,7 @@ export default async function HeatmapPage({
 
   return (
     <div className="flex flex-1 flex-col gap-6 p-4 sm:p-8">
-      <header className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-        <div>
-          <h1 className="text-4xl font-bold leading-9 -tracking-tight text-brand-dark">
-            Heatmap
-          </h1>
-        </div>
-        <Suspense fallback={null}>
-          <RangeFilter />
-        </Suspense>
-      </header>
+      <PageHeader title="Heatmap" />
 
       {error || !points ? (
         <Card className="border border-status-error-border bg-status-error-bg text-status-error-text">
@@ -69,14 +58,6 @@ export default async function HeatmapPage({
       ) : (
         <Card className="p-6">
           <HeatmapViewer captures={OVERLAY_CAPTURES} points={points} />
-          <p className="mt-3 text-xs text-muted-foreground">
-            Coordinate heat over a snapshot of the current overlay. Clicks are
-            viewport-relative (the overlay locks page scroll); each device view
-            matches its dominant viewport ({OVERLAY_CAPTURES.desktop.width}×
-            {OVERLAY_CAPTURES.desktop.height} desktop,{" "}
-            {OVERLAY_CAPTURES.mobile.width}×{OVERLAY_CAPTURES.mobile.height}{" "}
-            mobile).
-          </p>
         </Card>
       )}
     </div>

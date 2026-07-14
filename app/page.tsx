@@ -1,11 +1,10 @@
-import { Suspense } from "react";
 import MetricChart from "./components/MetricChart";
 import MetricSwitcher, { type MetricOption } from "./components/MetricSwitcher";
 import CategoryChart from "./components/CategoryChart";
 import BreakdownList from "./components/BreakdownList";
 import FunnelCard from "./components/FunnelCard";
 import KpiCard from "./components/KpiCard";
-import RangeFilter from "./components/RangeFilter";
+import PageHeader from "./components/PageHeader";
 import { Card } from "@/components/ui/card/Card";
 import { BRAND_PURPLE as PURPLE } from "./lib/theme";
 import {
@@ -23,7 +22,6 @@ import {
   getBrowserBreakdown,
   getOsBreakdown,
   normalizeRange,
-  OVERLAY_PAGE_URL,
   type MetricPoint,
   type BreakdownRow,
   type FunnelData,
@@ -138,16 +136,7 @@ export default async function Home({
 
   return (
     <div className="flex flex-1 flex-col gap-8 p-4 sm:p-8">
-      <header className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-        <div>
-          <h1 className="text-4xl font-bold leading-9 -tracking-tight text-brand-dark">
-            Overview
-          </h1>
-        </div>
-        <Suspense fallback={null}>
-          <RangeFilter />
-        </Suspense>
-      </header>
+      <PageHeader title="Overview" />
 
       {error ? (
         <Card className="border border-status-error-border bg-status-error-bg text-status-error-text">
