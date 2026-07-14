@@ -49,7 +49,6 @@ export default async function HeatmapPage({
   return (
     <div className="flex flex-1 flex-col gap-6 p-4 sm:p-8">
       <PageHeader title="Heatmap" />
-
       {error || !points ? (
         <Card className="border border-status-error-border bg-status-error-bg text-status-error-text">
           <p className="font-medium">Couldn&apos;t load heatmap.</p>
