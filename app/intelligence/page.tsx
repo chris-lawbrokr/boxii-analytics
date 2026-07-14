@@ -128,21 +128,13 @@ export default async function IntelligencePage({
         </Card>
       ) : (
         <>
-          <Section title="" description="">
+          <Section title="">
             <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
               <Card className="p-6 lg:col-span-2">
-                <SegmentTable
-                  title="Traffic source"
-                  subtitle="Boxii's own normalized attribution, resolved at page load."
-                  rows={sources}
-                />
+                <SegmentTable title="Traffic source" rows={sources} />
               </Card>
               <Card className="p-6">
-                <SegmentTable
-                  title="Channel"
-                  subtitle="PostHog's channel classification, for cross-checking."
-                  rows={channels}
-                />
+                <SegmentTable title="Channel" rows={channels} />
               </Card>
               <Card className="p-6">
                 <SegmentTable title="Referring domain" rows={referrers} />
@@ -150,10 +142,7 @@ export default async function IntelligencePage({
             </div>
           </Section>
 
-          <Section
-            title="Geography"
-            description="Where converting visitors are. City and region come from GeoIP on every event."
-          >
+          <Section title="Geography">
             <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
               <Card className="p-6">
                 <SegmentTable title="State / region" rows={regions} />
@@ -175,23 +164,13 @@ export default async function IntelligencePage({
             </div>
           </Section>
 
-          <Section
-            title="Links"
-            description="Only CTAs that navigate somewhere carry a destination, so this is the subset of the overlay that sends people onward."
-          >
+          <Section title="Links">
             <Card className="p-6">
-              <LinkList
-                title="Most clicked links"
-                subtitle="Ranked by clicks across the selected range."
-                rows={links}
-              />
+              <LinkList title="Most clicked links" rows={links} />
             </Card>
           </Section>
 
-          <Section
-            title="Mini Boxii"
-            description="The collapsed floating launcher, which only exists once the overlay is dismissed — the overlay's second act."
-          >
+          <Section title="Mini Boxii">
             <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
               <Card className="p-5">
                 <KpiCard
@@ -243,43 +222,6 @@ export default async function IntelligencePage({
                 />
               </Card>
             </div>
-            <p className="text-xs text-muted-foreground">
-              Attributed by{" "}
-              <code className="font-mono">overlay_state = &quot;collapsed&quot;</code>
-              , so CTAs opened from the launcher&apos;s menu count too — not just
-              the reopen tap. Low volume: all mini activity to date falls inside
-              the last 7 days, so the 30d and 90d ranges currently show the same
-              numbers.
-            </p>
-          </Section>
-
-          <Section title="Persona">
-            <Card className="p-6">
-              <p className="text-sm font-semibold text-brand-dark">
-                Age and gender aren&apos;t available
-              </p>
-              <p className="mt-2 max-w-3xl text-sm text-muted-foreground">
-                PostHog doesn&apos;t collect demographics, and Boxii runs{" "}
-                <code className="font-mono text-xs">
-                  person_profiles: &apos;identified_only&apos;
-                </code>{" "}
-                with no lead-capture widget shipped yet — so every session in
-                this dashboard is anonymous. Nothing in the event stream implies
-                age or gender, and inferring it from names or geography would be
-                a guess dressed up as a metric.
-              </p>
-              <p className="mt-3 max-w-3xl text-sm text-muted-foreground">
-                Unlocking this needs two things: the lead-capture widget calling{" "}
-                <code className="font-mono text-xs">identify()</code> (the
-                plumbing already exists in{" "}
-                <code className="font-mono text-xs">
-                  src/analytics/identify.ts
-                </code>
-                ), and then a third-party enrichment provider keyed on the
-                captured email. Until then, the segments above are the real
-                &quot;who&quot; — location, device, and source.
-              </p>
-            </Card>
           </Section>
         </>
       )}
